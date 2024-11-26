@@ -1,5 +1,6 @@
 use ctrlc;
 use log::{debug, error};
+use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -10,9 +11,21 @@ use crate::error::{Result, TfocusError};
 use crate::selector::{SelectItem, Selector};
 use crate::types::Resource;
 
+/// Stores the child process ID for signal handling
 static mut CHILD_PID: Option<u32> = None;
 
+/// Main entry point for executing Terraform commands on selected resources
 pub fn execute_with_resources(resources: &[Resource]) -> Result<()> {
+    let running = setup_signal_handler()?;
+    let target_options = create_target_options(resources)?;
+    let operation = select_operation()?;
+    let working_dir = get_working_directory(resources)?;
+
+    execute_terraform_command(&operation, &target_options, working_dir, running)
+}
+
+/// Sets up the Ctrl+C signal handler
+fn setup_signal_handler() -> Result<Arc<AtomicBool>> {
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
 
@@ -37,21 +50,25 @@ pub fn execute_with_resources(resources: &[Resource]) -> Result<()> {
     })
     .map_err(|e| TfocusError::CommandExecutionError(e.to_string()))?;
 
+    Ok(running)
+}
+
+/// Creates target options for the Terraform command
+fn create_target_options(resources: &[Resource]) -> Result<Vec<String>> {
     let target_options: Vec<String> = resources
         .iter()
-        .map(|r| {
-            if r.is_module {
-                format!("-target=module.{}", r.name)
-            } else {
-                format!("-target=resource.{}.{}", r.resource_type, r.name)
-            }
-        })
+        .map(|r| format!("-target={}", r.target_string()))
         .collect();
 
     if target_options.is_empty() {
         return Err(TfocusError::ParseError("No targets specified".to_string()));
     }
 
+    Ok(target_options)
+}
+
+/// Prompts the user to select an operation (plan or apply)
+fn select_operation() -> Result<Operation> {
     Display::print_header("Select operation:");
 
     let items = vec![
@@ -68,41 +85,45 @@ pub fn execute_with_resources(resources: &[Resource]) -> Result<()> {
     ];
 
     let mut selector = Selector::new(items);
-    let operation = match selector.run()? {
+    match selector.run()? {
         Some(input) => match input.as_str() {
-            "1" => Operation::Plan,
-            "2" => Operation::Apply,
-            _ => return Err(TfocusError::InvalidOperation(input)),
+            "1" => Ok(Operation::Plan),
+            "2" => Ok(Operation::Apply),
+            _ => Err(TfocusError::InvalidOperation(input)),
         },
         None => {
             println!("\nOperation cancelled");
-            return Ok(());
+            std::process::exit(0);
         }
-    };
-
-    execute_terraform_command(&operation, &target_options, running)
+    }
 }
 
+/// Gets the working directory from the first resource
+fn get_working_directory(resources: &[Resource]) -> Result<&Path> {
+    resources
+        .first()
+        .map(|r| r.file_path.parent().unwrap_or(Path::new(".")))
+        .ok_or_else(|| TfocusError::ParseError("No resources specified".to_string()))
+}
+
+/// Executes the Terraform command with the specified options
 fn execute_terraform_command(
     operation: &Operation,
     target_options: &[String],
+    working_dir: &Path,
     running: Arc<AtomicBool>,
 ) -> Result<()> {
-    // Build terraform command with basic arguments
     let mut command = Command::new("terraform");
-    command.arg(operation.to_string());
+    command.arg(operation.to_string()).current_dir(working_dir);
 
-    // Add target options
     for target in target_options {
         command.arg(target);
     }
 
-    // Add -auto-approve for apply operations
     if matches!(operation, Operation::Apply) {
         command.arg("-auto-approve");
     }
 
-    // Get the full command string for display
     let command_str = format!(
         "terraform {} {}{}",
         operation.to_string(),
@@ -115,19 +136,20 @@ fn execute_terraform_command(
     );
 
     Display::print_command(&command_str);
-    debug!("Executing command: {}", command_str);
+    debug!(
+        "Executing terraform command in directory: {:?}",
+        working_dir
+    );
+    debug!("Full command: {:?}", command);
 
-    // Execute terraform command
     let mut child = command
         .spawn()
         .map_err(|e| TfocusError::CommandExecutionError(e.to_string()))?;
 
-    // Store child process ID for signal handling
     unsafe {
         CHILD_PID = Some(child.id());
     }
 
-    // Wait for command completion
     match child.wait() {
         Ok(status) if status.success() => {
             if running.load(Ordering::SeqCst) {
@@ -158,34 +180,30 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn test_target_option_generation() {
+    fn test_create_target_options() {
         let resources = vec![
             Resource {
                 resource_type: "aws_instance".to_string(),
                 name: "web".to_string(),
                 is_module: false,
                 file_path: PathBuf::from("main.tf"),
+                has_count: false,
+                has_for_each: false,
+                index: None,
             },
             Resource {
-                resource_type: String::new(),
-                name: "vpc".to_string(),
-                is_module: true,
+                resource_type: "aws_instance".to_string(),
+                name: "app".to_string(),
+                is_module: false,
                 file_path: PathBuf::from("main.tf"),
+                has_count: true,
+                has_for_each: false,
+                index: Some("0".to_string()),
             },
         ];
 
-        let target_options: Vec<String> = resources
-            .iter()
-            .map(|r| {
-                if r.is_module {
-                    format!("-target=module.{}", r.name)
-                } else {
-                    format!("-target=resource.{}.{}", r.resource_type, r.name)
-                }
-            })
-            .collect();
-
-        assert_eq!(target_options[0], "-target=resource.aws_instance.web");
-        assert_eq!(target_options[1], "-target=module.vpc");
+        let options = create_target_options(&resources).unwrap();
+        assert_eq!(options[0], "-target=aws_instance.web");
+        assert_eq!(options[1], "-target=aws_instance.app[0]");
     }
 }

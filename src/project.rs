@@ -7,17 +7,20 @@ use std::path::{Path, PathBuf};
 use crate::error::{Result, TfocusError};
 use crate::types::{Resource, Target};
 
+/// Represents a Terraform project with its resources
 pub struct TerraformProject {
     resources: Vec<Resource>,
 }
 
 impl TerraformProject {
+    /// Creates a new empty TerraformProject
     pub fn new() -> Self {
         Self {
             resources: Vec::new(),
         }
     }
 
+    /// Recursively finds all Terraform files in the given directory
     fn find_terraform_files(dir: &Path) -> Result<Vec<PathBuf>> {
         let mut tf_files = Vec::new();
 
@@ -42,6 +45,7 @@ impl TerraformProject {
         Ok(tf_files)
     }
 
+    /// Parses a directory containing Terraform files
     pub fn parse_directory(path: &Path) -> Result<Self> {
         let mut project = TerraformProject::new();
 
@@ -67,38 +71,58 @@ impl TerraformProject {
         Ok(project)
     }
 
+    /// Parses a single Terraform file for resources and modules
     fn parse_file(&mut self, path: &Path) -> Result<()> {
         let content = fs::read_to_string(path).map_err(TfocusError::Io)?;
-
         debug!("Parsing file: {:?}", path);
 
-        // Parse resources
-        let resource_regex = Regex::new(r#"(?m)^resource\s+"([^"]+)"\s+"([^"]+)""#)
-            .map_err(TfocusError::RegexError)?;
+        // Parse resources with improved regex pattern
+        let resource_regex =
+            Regex::new(r#"(?m)^\s*resource\s+"([^"]+)"\s+"([^"]+)"\s*\{(?s:.*?)\n\s*\}"#)
+                .map_err(TfocusError::RegexError)?;
+
         for cap in resource_regex.captures_iter(&content) {
+            let full_block = cap.get(0).unwrap().as_str();
+            let has_count = full_block.contains("count =") || full_block.contains("count=");
+            let has_for_each =
+                full_block.contains("for_each =") || full_block.contains("for_each=");
+
             self.resources.push(Resource {
                 resource_type: cap[1].to_string(),
                 name: cap[2].to_string(),
                 is_module: false,
                 file_path: path.to_owned(),
+                has_count,
+                has_for_each,
+                index: None,
             });
         }
 
-        // Parse modules
-        let module_regex =
-            Regex::new(r#"(?m)^module\s+"([^"]+)""#).map_err(TfocusError::RegexError)?;
+        // Parse modules with improved regex pattern
+        let module_regex = Regex::new(r#"(?m)^\s*module\s+"([^"]+)"\s*\{(?s:.*?)\n\s*\}"#)
+            .map_err(TfocusError::RegexError)?;
+
         for cap in module_regex.captures_iter(&content) {
+            let full_block = cap.get(0).unwrap().as_str();
+            let has_count = full_block.contains("count =") || full_block.contains("count=");
+            let has_for_each =
+                full_block.contains("for_each =") || full_block.contains("for_each=");
+
             self.resources.push(Resource {
                 resource_type: String::new(),
                 name: cap[1].to_string(),
                 is_module: true,
                 file_path: path.to_owned(),
+                has_count,
+                has_for_each,
+                index: None,
             });
         }
 
         Ok(())
     }
 
+    /// Returns a list of unique file paths
     pub fn get_unique_files(&self) -> Vec<PathBuf> {
         let mut files: HashSet<PathBuf> = HashSet::new();
         for resource in &self.resources {
@@ -109,6 +133,7 @@ impl TerraformProject {
         files
     }
 
+    /// Returns a list of module names
     pub fn get_modules(&self) -> Vec<String> {
         let mut modules: Vec<String> = self
             .resources
@@ -121,6 +146,7 @@ impl TerraformProject {
         modules
     }
 
+    /// Returns all resources in the project
     pub fn get_all_resources(&self) -> Vec<Resource> {
         let mut resources = self.resources.clone();
         resources.sort_by(|a, b| {
@@ -133,6 +159,7 @@ impl TerraformProject {
         resources
     }
 
+    /// Returns resources matching the specified target
     pub fn get_resources_by_target(&self, target: &Target) -> Vec<Resource> {
         match target {
             Target::File(path) => self
@@ -154,5 +181,141 @@ impl TerraformProject {
                 .cloned()
                 .collect(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_parse_resource_with_count() {
+        let mut project = TerraformProject::new();
+        let content = r#"
+        resource "aws_instance" "web" {
+          count = 2
+          ami = "ami-123456"
+          instance_type = "t2.micro"
+        }
+        "#;
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut temp_file, content.as_bytes()).unwrap();
+
+        project.parse_file(temp_file.path()).unwrap();
+
+        let resources = project.get_all_resources();
+        assert_eq!(resources.len(), 1, "Expected exactly one resource");
+        assert!(resources[0].has_count, "Resource should have count");
+        assert!(
+            !resources[0].has_for_each,
+            "Resource should not have for_each"
+        );
+    }
+
+    #[test]
+    fn test_parse_resource_with_for_each() {
+        let mut project = TerraformProject::new();
+        let content = r#"
+        resource "aws_instance" "web" {
+          for_each = toset(["a", "b"])
+          ami = "ami-123456"
+          instance_type = "t2.micro"
+        }
+        "#;
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut temp_file, content.as_bytes()).unwrap();
+
+        project.parse_file(temp_file.path()).unwrap();
+
+        let resources = project.get_all_resources();
+        assert_eq!(resources.len(), 1, "Expected exactly one resource");
+        assert!(!resources[0].has_count, "Resource should not have count");
+        assert!(resources[0].has_for_each, "Resource should have for_each");
+    }
+
+    #[test]
+    fn test_parse_module_with_count() {
+        let mut project = TerraformProject::new();
+        let content = r#"
+        module "web" {
+          count = 2
+          source = "./modules/web"
+        }
+        "#;
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut temp_file, content.as_bytes()).unwrap();
+
+        project.parse_file(temp_file.path()).unwrap();
+
+        let resources = project.get_all_resources();
+        assert_eq!(resources.len(), 1, "Expected exactly one module");
+        assert!(resources[0].has_count, "Module should have count");
+        assert!(
+            !resources[0].has_for_each,
+            "Module should not have for_each"
+        );
+        assert!(resources[0].is_module, "Resource should be a module");
+    }
+
+    #[test]
+    fn test_parse_module_with_for_each() {
+        let mut project = TerraformProject::new();
+        let content = r#"
+        module "web" {
+          for_each = toset(["a", "b"])
+          source = "./modules/web"
+        }
+        "#;
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut temp_file, content.as_bytes()).unwrap();
+
+        project.parse_file(temp_file.path()).unwrap();
+
+        let resources = project.get_all_resources();
+        assert_eq!(resources.len(), 1, "Expected exactly one module");
+        assert!(!resources[0].has_count, "Module should not have count");
+        assert!(resources[0].has_for_each, "Module should have for_each");
+        assert!(resources[0].is_module, "Resource should be a module");
+    }
+
+    #[test]
+    fn test_get_resources_by_target() {
+        let mut project = TerraformProject::new();
+        let content = r#"
+        resource "aws_instance" "web" {
+          count = 2
+          ami = "ami-123456"
+          instance_type = "t2.micro"
+        }
+
+        module "app" {
+          source = "./modules/app"
+        }
+        "#;
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut temp_file, content.as_bytes()).unwrap();
+        let file_path = temp_file.path().to_path_buf();
+
+        project.parse_file(&file_path).unwrap();
+
+        let by_file = project.get_resources_by_target(&Target::File(file_path.clone()));
+        assert_eq!(by_file.len(), 2, "Expected two resources in the file");
+
+        let by_resource = project.get_resources_by_target(&Target::Resource(
+            "aws_instance".to_string(),
+            "web".to_string(),
+        ));
+        assert_eq!(by_resource.len(), 1, "Expected one matching resource");
+        assert!(by_resource[0].has_count, "Resource should have count");
+
+        let by_module = project.get_resources_by_target(&Target::Module("app".to_string()));
+        assert_eq!(by_module.len(), 1, "Expected one matching module");
+        assert!(by_module[0].is_module, "Resource should be a module");
     }
 }
