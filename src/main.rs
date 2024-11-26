@@ -84,7 +84,7 @@ fn create_selection_items(selection_items: &[SelectionItem]) -> Vec<SelectItem> 
 }
 
 fn main() -> Result<()> {
-    // 環境変数の設定
+    // setting env
     env_logger::init();
     let cli = Cli::parse();
 
@@ -92,7 +92,7 @@ fn main() -> Result<()> {
         std::env::set_var("RUST_LOG", "debug");
     }
 
-    // Terraformプロジェクトの解析
+    // Parse the Terraform project
     let project = match TerraformProject::parse_directory(Path::new(&cli.path)) {
         Ok(project) => project,
         Err(TfocusError::NoTerraformFiles) => {
@@ -103,29 +103,29 @@ fn main() -> Result<()> {
         Err(e) => return Err(e),
     };
 
-    // 全てのターゲットを収集
+    // Collect all targets
     let mut selection_items = Vec::new();
     let mut current_index = 1;
 
-    // ファイルの追加
+    // add files
     for file in project.get_unique_files() {
         selection_items.push(SelectionItem::File(current_index, file));
         current_index += 1;
     }
 
-    // モジュールの追加
+    // add modules
     for module in project.get_modules() {
         selection_items.push(SelectionItem::Module(current_index, module));
         current_index += 1;
     }
 
-    // リソースの追加
+    // add resources
     for resource in project.get_all_resources() {
         selection_items.push(SelectionItem::Resource(current_index, resource));
         current_index += 1;
     }
 
-    // セレクターの初期化と実行
+    // Initialize and run the selector
     let selector_items = create_selection_items(&selection_items);
     let mut selector = Selector::new(selector_items);
 
@@ -137,7 +137,7 @@ fn main() -> Result<()> {
         }
     };
 
-    // 選択されたアイテムの解析
+    // Analysis of the selected item
     let target = if selected.starts_with("f:") {
         let path = Path::new(&selected[2..]).to_path_buf();
         Target::File(path)
@@ -153,7 +153,7 @@ fn main() -> Result<()> {
         return Err(TfocusError::InvalidTargetSelection);
     };
 
-    // リソースの取得と実行
+    // Get the resources for the selected target
     let resources = match &target {
         Target::File(path) => project.get_resources_by_target(&Target::File(path.clone())),
         Target::Module(name) => project.get_resources_by_target(&Target::Module(name.clone())),
@@ -173,5 +173,6 @@ fn main() -> Result<()> {
     }
 
     println!();
+    // Execute the selected resources
     executor::execute_with_resources(&resources)
 }
