@@ -21,7 +21,17 @@ pub fn execute_with_resources(resources: &[Resource]) -> Result<()> {
     let operation = select_operation()?;
     let working_dir = get_working_directory(resources)?;
 
-    execute_terraform_command(&operation, &target_options, working_dir, running)
+    let result =
+        execute_terraform_command(&operation, &target_options, working_dir, running.clone())?;
+
+    // If plan was successful, suggest terraform apply with the same targets
+    if result && matches!(operation, Operation::Plan) {
+        Display::print_header("\nTo apply these changes, run:");
+        let terraform_command = format!("terraform apply {}", target_options.join(" "));
+        println!("  {}", terraform_command);
+    }
+
+    Ok(())
 }
 
 /// Sets up the Ctrl+C signal handler
@@ -112,7 +122,7 @@ fn execute_terraform_command(
     target_options: &[String],
     working_dir: &Path,
     running: Arc<AtomicBool>,
-) -> Result<()> {
+) -> Result<bool> {
     let mut command = Command::new("terraform");
     command.arg(operation.to_string()).current_dir(working_dir);
 
@@ -155,10 +165,10 @@ fn execute_terraform_command(
             if running.load(Ordering::SeqCst) {
                 debug!("Terraform command executed successfully");
                 Display::print_success("Operation completed successfully");
-                Ok(())
+                Ok(true)
             } else {
                 Display::print_header("\nOperation cancelled by user");
-                Ok(())
+                Ok(false)
             }
         }
         Ok(status) => {
