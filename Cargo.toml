@@ -2,6 +2,15 @@
 name = "tfocus"
 version = "0.1.0"
 edition = "2021"
+description = "Terminal UI for Terraform workspace management"
+license = "MIT"
+repository = "https://github.com/nwiizo/tfocus"
+documentation = "https://github.com/nwiizo/tfocus"
+homepage = "https://github.com/nwiizo/tfocus"
+authors = ["syu.m.5151@gmail.com"]
+keywords = ["terraform", "cli", "workspace"]
+categories = ["command-line-utilities"]
+
 
 [dependencies]
 walkdir = "2.3"

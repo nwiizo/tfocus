@@ -19,6 +19,12 @@ Think of it as an "emergency tool" - not for everyday use.
 
 ## Installation 🛠️
 
+install from crates.io
+```bash
+cargo install tfocus
+```
+
+install from github
 ```bash
 cargo install --git https://github.com/nwiizo/tfocus
 ```
