@@ -2,7 +2,7 @@
 name = "tfocus"
 version = "0.1.0"
 edition = "2021"
-description = "Terminal UI for Terraform workspace management"
+description = "tfocus is a super interactive tool for selecting and executing Terraform plan/apply on specific resources. Think of it as an emergency tool - not for everyday use."
 license = "MIT"
 repository = "https://github.com/nwiizo/tfocus"
 documentation = "https://github.com/nwiizo/tfocus"
