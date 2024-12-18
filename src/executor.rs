@@ -1,4 +1,3 @@
-use ctrlc;
 use log::{debug, error};
 use std::path::Path;
 use std::process::Command;
@@ -136,7 +135,7 @@ fn execute_terraform_command(
 
     let command_str = format!(
         "terraform {} {}{}",
-        operation.to_string(),
+        operation,
         target_options.join(" "),
         if matches!(operation, Operation::Apply) {
             " -auto-approve"
