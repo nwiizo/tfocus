@@ -1,6 +1,6 @@
 [package]
 name = "tfocus"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "tfocus is a super interactive tool for selecting and executing Terraform plan/apply on specific resources. Think of it as an emergency tool - not for everyday use."
 license = "MIT"
