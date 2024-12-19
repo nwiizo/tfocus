@@ -718,7 +718,7 @@ checksum = "3369f5ac52d5eb6ab48c6b4ffdc8efbcad6b89c765749064ba298f2c68a16a76"
 
 [[package]]
 name = "tfocus"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "assert_fs",
  "clap",
