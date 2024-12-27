@@ -138,13 +138,13 @@ fn main() -> Result<()> {
     };
 
     // Analysis of the selected item
-    let target = if selected.starts_with("f:") {
-        let path = Path::new(&selected[2..]).to_path_buf();
+    let target = if let Some(stripped) = selected.strip_prefix("f:") {
+        let path = Path::new(stripped).to_path_buf();
         Target::File(path)
-    } else if selected.starts_with("m:") {
-        Target::Module(selected[2..].to_string())
-    } else if selected.starts_with("r:") {
-        let parts: Vec<&str> = selected[2..].split('.').collect();
+    } else if let Some(stripped) = selected.strip_prefix("m:") {
+        Target::Module(stripped.to_string())
+    } else if let Some(stripped) = selected.strip_prefix("r:") {
+        let parts: Vec<&str> = stripped.split('.').collect();
         if parts.len() != 2 {
             return Err(TfocusError::InvalidTargetSelection);
         }
