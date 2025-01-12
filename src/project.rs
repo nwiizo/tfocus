@@ -29,7 +29,7 @@ impl TerraformProject {
             let path = entry.path();
 
             if path.is_file() {
-                if path.extension().map_or(false, |ext| ext == "tf")
+                if path.extension().is_some_and(|ext| ext == "tf")
                     && !path.to_string_lossy().contains("/.terraform/")
                 {
                     tf_files.push(path);
