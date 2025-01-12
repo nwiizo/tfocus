@@ -3,6 +3,7 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::env;
 
 use crate::cli::Operation;
 use crate::display::Display;
@@ -20,8 +21,12 @@ pub fn execute_with_resources(resources: &[Resource]) -> Result<()> {
     let operation = select_operation()?;
     let working_dir = get_working_directory(resources)?;
 
-    let result =
-        execute_terraform_command(&operation, &target_options, working_dir, running.clone())?;
+    let result = execute_terraform_command(
+        &operation,
+        &target_options,
+        working_dir,
+        running.clone()
+    )?;
 
     // If plan was successful, suggest terraform apply with the same targets
     if result && matches!(operation, Operation::Plan) {
@@ -51,6 +56,7 @@ fn setup_signal_handler() -> Result<Arc<AtomicBool>> {
                 }
                 #[cfg(windows)]
                 {
+                    // Additional Windows termination logic here if needed.
                     use windows::Win32::Foundation::HANDLE;
                     use windows::Win32::System::Threading::{OpenProcess, TerminateProcess};
                 }
@@ -122,7 +128,9 @@ fn execute_terraform_command(
     working_dir: &Path,
     running: Arc<AtomicBool>,
 ) -> Result<bool> {
-    let mut command = Command::new("terraform");
+    // read `TERRAFORM_BINARY_NAME` env, fallback to "terraform"
+    let terraform_binary = env::var("TERRAFORM_BINARY_NAME").unwrap_or_else(|_| "terraform".to_string());
+    let mut command = Command::new(&terraform_binary);
     command.arg(operation.to_string()).current_dir(working_dir);
 
     for target in target_options {
@@ -134,15 +142,16 @@ fn execute_terraform_command(
     }
 
     let command_str = format!(
-        "terraform {} {}{}",
+        "{} {} {}",
+        terraform_binary,
         operation,
         target_options.join(" "),
-        if matches!(operation, Operation::Apply) {
-            " -auto-approve"
-        } else {
-            ""
-        }
     );
+    let command_str = if matches!(operation, Operation::Apply) {
+        format!("{} -auto-approve", command_str)
+    } else {
+        command_str
+    };
 
     Display::print_command(&command_str);
     debug!(

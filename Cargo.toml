@@ -8,7 +8,7 @@ repository = "https://github.com/nwiizo/tfocus"
 documentation = "https://github.com/nwiizo/tfocus"
 homepage = "https://github.com/nwiizo/tfocus"
 authors = ["syu.m.5151@gmail.com"]
-keywords = ["terraform", "cli", "workspace"]
+keywords = ["terraform", "opentofu", "cli", "workspace"]
 categories = ["command-line-utilities"]
 
 
