@@ -1,9 +1,9 @@
 use log::{debug, error};
+use std::env;
 use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::env;
 
 use crate::cli::Operation;
 use crate::display::Display;
@@ -21,12 +21,8 @@ pub fn execute_with_resources(resources: &[Resource]) -> Result<()> {
     let operation = select_operation()?;
     let working_dir = get_working_directory(resources)?;
 
-    let result = execute_terraform_command(
-        &operation,
-        &target_options,
-        working_dir,
-        running.clone()
-    )?;
+    let result =
+        execute_terraform_command(&operation, &target_options, working_dir, running.clone())?;
 
     // If plan was successful, suggest terraform apply with the same targets
     if result && matches!(operation, Operation::Plan) {
@@ -129,7 +125,8 @@ fn execute_terraform_command(
     running: Arc<AtomicBool>,
 ) -> Result<bool> {
     // read `TERRAFORM_BINARY_NAME` env, fallback to "terraform"
-    let terraform_binary = env::var("TERRAFORM_BINARY_NAME").unwrap_or_else(|_| "terraform".to_string());
+    let terraform_binary =
+        env::var("TERRAFORM_BINARY_NAME").unwrap_or_else(|_| "terraform".to_string());
     let mut command = Command::new(&terraform_binary);
     command.arg(operation.to_string()).current_dir(working_dir);
 
