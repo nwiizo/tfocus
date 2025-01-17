@@ -20,8 +20,15 @@ Think of it as an "emergency tool" - not for everyday use.
 ## Installation 🛠️
 
 install from crates.io
+
 ```bash
 cargo install tfocus
+```
+
+install via [brew](https://brew.sh/)
+
+```bash
+brew install tfocus
 ```
 
 install from github
@@ -96,7 +103,7 @@ QUERY>
 
 ## Contributing 🤝
 
-Issues and PRs are welcome! 
+Issues and PRs are welcome!
 Please help make this tool safer and more useful.
 
 ## License 📜
@@ -105,7 +112,7 @@ MIT
 
 ## Final Note 🎬
 
-Think of this tool as a "fire exit" - 
+Think of this tool as a "fire exit" -
 It's there when you need it, but you hope you never have to use it! 😅
 
 ---
